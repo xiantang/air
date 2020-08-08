@@ -31,7 +31,7 @@ jobs:
     - name: Upload Coverage report to CodeCov
       uses: codecov/codecov-action@v1.0.0
       with:
-        token: ${{secrets.CODECOV_TOKEN}}
+        token: 4a0821cd-876d-44d2-9f63-51f9ce1baf91
         file: ./coverage.txt
 
   release:
