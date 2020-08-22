@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // Engine ...
@@ -269,16 +270,15 @@ func (e *Engine) flushEvents() {
 func (e *Engine) building() error {
 	var err error
 	e.buildLog("building...")
-	cmd, stdout, stderr, err := e.startCmd(e.config.Build.Cmd)
+	cmd, ptmx, err := e.startCmd(e.config.Build.Cmd)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		stdout.Close()
-		stderr.Close()
+		ptmx.Close()
 	}()
-	_, _ = io.Copy(os.Stdout, stdout)
-	_, _ = io.Copy(os.Stderr, stderr)
+	_, _ = io.Copy(os.Stdout, ptmx)
+	_, _ = io.Copy(os.Stderr, ptmx)
 	// wait for building
 	err = cmd.Wait()
 	if err != nil {
@@ -290,18 +290,26 @@ func (e *Engine) building() error {
 func (e *Engine) runBin() error {
 	var err error
 	e.runnerLog("running...")
-	cmd, stdout, stderr, err := e.startCmd(e.config.Build.Bin)
+	cmd, ptmx, err := e.startCmd(e.config.Build.Bin)
+
 	if err != nil {
 		return err
 	}
+	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = terminal.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
 	e.withLock(func() {
 		e.binRunning = true
 	})
 
 	go func() {
-		_, _ = io.Copy(os.Stdout, stdout)
-		_, _ = io.Copy(os.Stderr, stderr)
+		_, _ = io.Copy(os.Stdout, ptmx)
+		_, _ = io.Copy(os.Stderr, ptmx)
 	}()
+	_, _ = io.Copy(ptmx, os.Stdin)
+
 
 	go func(cmd *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser) {
 		<-e.binStopCh
@@ -309,6 +317,7 @@ func (e *Engine) runBin() error {
 		defer func() {
 			stdout.Close()
 			stderr.Close()
+			ptmx.Close()
 		}()
 
 		var err error
@@ -331,7 +340,7 @@ func (e *Engine) runBin() error {
 		if err = os.Remove(cmdBinPath); err != nil {
 			e.mainLog("failed to remove %s, error: %s", e.config.rel(e.config.binPath()), err)
 		}
-	}(cmd, stdout, stderr)
+	}(cmd, ptmx, ptmx)
 	return nil
 }
 
