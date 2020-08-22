@@ -310,7 +310,6 @@ func (e *Engine) runBin() error {
 	}()
 	_, _ = io.Copy(ptmx, os.Stdin)
 
-
 	go func(cmd *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser) {
 		<-e.binStopCh
 		e.mainDebug("trying to kill cmd %+v", cmd.Args)
