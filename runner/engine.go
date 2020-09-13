@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/gin-gonic/gin"
 	"io"
 	"os"
 	"os/exec"
@@ -13,23 +14,26 @@ import (
 
 // Engine ...
 type Engine struct {
-	config    *config
-	logger    *logger
-	watcher   *fsnotify.Watcher
-	debugMode bool
-
+	config         *config
+	logger         *logger
+	watcher        *fsnotify.Watcher
+	debugMode      bool
+	port           string
 	eventCh        chan string
 	watcherStopCh  chan bool
 	buildRunCh     chan bool
 	buildRunStopCh chan bool
 	binStopCh      chan bool
 	exitCh         chan bool
+	pid            int
 
 	mu         sync.RWMutex
 	binRunning bool
 	watchers   uint
 
-	ll sync.Mutex // lock for logger
+	ll     sync.Mutex // lock for logger
+	state  string
+	server *gin.Engine
 }
 
 // NewEngine ...
@@ -45,7 +49,8 @@ func NewEngine(cfgPath string, debugMode bool) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{
+	router := gin.New()
+	engine := &Engine{
 		config:         cfg,
 		logger:         logger,
 		watcher:        watcher,
@@ -58,7 +63,24 @@ func NewEngine(cfgPath string, debugMode bool) (*Engine, error) {
 		exitCh:         make(chan bool),
 		binRunning:     false,
 		watchers:       0,
-	}, nil
+		port:           "6788",
+		state:          "init",
+	}
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"state": engine.state,
+			"pid":   engine.pid,
+		})
+	})
+	router.POST("/", func(c *gin.Context) {
+		engine.state = "connected"
+		c.JSON(200, gin.H{
+			"state": engine.state,
+			"pid":   engine.pid,
+		})
+	})
+	engine.server = router
+	return engine, nil
 }
 
 // Run run run
@@ -72,6 +94,9 @@ func (e *Engine) Run() {
 	if err = e.watching(e.config.Root); err != nil {
 		os.Exit(1)
 	}
+	go func() {
+		e.server.Run(":" + e.port)
+	}()
 
 	e.start()
 	e.cleanup()
@@ -90,6 +115,7 @@ func (e *Engine) checkRunEnv() error {
 }
 
 func (e *Engine) watching(root string) error {
+	e.state = "watching"
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		// NOTE: path is absolute
 		if info != nil && !info.IsDir() {
@@ -237,6 +263,7 @@ func (e *Engine) buildRun() {
 	default:
 	}
 	var err error
+	e.state = "building"
 	if err = e.building(); err != nil {
 		e.buildLog("failed to build, error: %s", err.Error())
 		_ = e.writeBuildErrorLog(err.Error())
@@ -289,11 +316,17 @@ func (e *Engine) building() error {
 
 func (e *Engine) runBin() error {
 	var err error
+	e.state = "running"
 	e.runnerLog("running...")
 	cmd, stdout, stderr, err := e.startCmd(e.config.Build.Bin)
+	pid := cmd.Process.Pid
+
+	e.pid = pid
+
 	if err != nil {
 		return err
 	}
+
 	e.withLock(func() {
 		e.binRunning = true
 	})
