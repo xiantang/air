@@ -124,3 +124,8 @@ func TestChecksumMap(t *testing.T) {
 		t.Errorf("expected no entry for bar.txt, but had one")
 	}
 }
+
+func TestGetStructureFieldTagMap(t *testing.T) {
+	c := config{}
+	CreateStructureFieldTagMap(c)
+}
