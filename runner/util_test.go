@@ -1,8 +1,11 @@
 package runner
 
 import (
+	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -127,5 +130,33 @@ func TestChecksumMap(t *testing.T) {
 
 func TestGetStructureFieldTagMap(t *testing.T) {
 	c := config{}
-	CreateStructureFieldTagMap(c)
+	tagMap := CreateStructureFieldTagMap(c)
+	for _, i2 := range tagMap {
+		fmt.Printf("%v\n", i2.fieldPath)
+	}
+}
+
+func TestSetStructValue(t *testing.T) {
+	c := config{}
+	v := reflect.ValueOf(&c)
+	c1 := setValue2Struct(v, "TmpDir", "asdasd")
+	c2 := (c1.Interface()).(*config)
+	assert.Equal(t, "asdasd", c2.TmpDir)
+}
+
+func TestNestStructValue(t *testing.T) {
+	c := config{}
+	v := reflect.ValueOf(&c)
+	c1 := setValue2Struct(v, "Build.Cmd", "asdasd")
+	c2 := (c1.Interface()).(*config)
+	assert.Equal(t, "asdasd", c2.Build.Cmd)
+}
+
+func TestStruct(t *testing.T) {
+	c := &config{}
+	v := reflect.ValueOf(c)
+	config := setValue2Struct(v, "", "asdasd")
+	if config !=nil {
+		t.Fatal()
+	}
 }
